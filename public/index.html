@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KORO — Live Translator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: rgba(10, 10, 14, 0.88);
+      --surface: rgba(255, 255, 255, 0.05);
+      --border: rgba(255, 255, 255, 0.10);
+      --accent: #4f8ef7;
+      --danger: #f75050;
+      --text-primary: #f0f0f0;
+      --text-secondary: #888;
+      --text-interim: rgba(240, 240, 240, 0.45);
+      --korean: #a8d8a8;
+      --radius: 14px;
+    }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      backdrop-filter: blur(12px);
+    }
+    .card {
+      width: 100%; max-width: 560px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex; flex-direction: column; gap: 14px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    }
+    .header { display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-size: 18px; font-weight: 700; letter-spacing: 0.05em; color: var(--accent); }
+    .logo span { color: var(--text-secondary); font-weight: 400; font-size: 13px; margin-left: 8px; }
+    .controls { display: flex; align-items: center; gap: 10px; }
+    .btn-mic {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 18px; border-radius: 999px; border: none;
+      cursor: pointer; font-size: 14px; font-weight: 600;
+      transition: all 0.18s ease; background: var(--accent); color: #fff;
+    }
+    .btn-mic:hover { filter: brightness(1.15); }
+    .btn-mic.listening { background: var(--danger); animation: pulse 1.8s infinite; }
+    .btn-clear {
+      background: none; border: 1px solid var(--border);
+      color: var(--text-secondary); padding: 8px 14px;
+      border-radius: 999px; cursor: pointer; font-size: 13px; transition: all 0.18s ease;
+    }
+    .btn-clear:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(247,80,80,0); }
+      50% { box-shadow: 0 0 0 6px rgba(247,80,80,0.3); }
+    }
+    .status-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary); flex-shrink: 0; }
+    .dot.active { background: #4caf50; animation: blink 1.2s infinite; }
+    .dot.translating { background: var(--accent); animation: blink 0.6s infinite; }
+    .dot.error { background: var(--danger); }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .divider { height: 1px; background: var(--border); }
+    .section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px; }
+    .transcript-box {
+      background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px; min-height: 80px; max-height: 140px;
+      overflow-y: auto; font-size: 15px; line-height: 1.6;
+    }
+    .transcript-box .interim { color: var(--text-interim); }
+    .translation-box {
+      background: rgba(168,216,168,0.06); border: 1px solid rgba(168,216,168,0.18);
+      border-radius: 10px; padding: 14px; min-height: 80px; max-height: 160px;
+      overflow-y: auto; font-size: 17px; line-height: 1.7; color: var(--korean);
+      font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+    }
+    .placeholder { color: var(--text-secondary); font-style: italic; font-size: 13px; }
+    .spinner {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid rgba(79,142,247,0.3); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .history { display: flex; flex-direction: column; gap: 10px; max-height: 220px; overflow-y: auto; }
+    .history-item { border-left: 2px solid var(--border); padding-left: 12px; }
+    .history-item .eng { font-size: 12px; color: var(--text-secondary); margin-bottom: 3px; }
+    .history-item .kor { font-size: 14px; color: var(--korean); font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; line-height: 1.5; }
+    .no-support { color: var(--danger); font-size: 14px; text-align: center; padding: 20px; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card" id="app">
+    <div class="header">
+      <div class="logo">KORO <span>EN → KR</span></div>
+      <div class="controls">
+        <button class="btn-clear" id="btnClear">Clear</button>
+        <button class="btn-mic" id="btnMic">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+          Start
+        </button>
+      </div>
+    </div>
+    <div class="status-bar">
+      <div class="dot" id="dot"></div>
+      <span id="statusText">Ready — click Start to begin</span>
+    </div>
+    <div class="divider"></div>
+    <div>
+      <div class="section-label">English (live)</div>
+      <div class="transcript-box" id="transcriptBox"><span class="placeholder">Speech will appear here...</span></div>
+    </div>
+    <div>
+      <div class="section-label">Korean translation</div>
+      <div class="translation-box" id="translationBox"><span class="placeholder">번역이 여기에 나타납니다...</span></div>
+    </div>
+    <div class="divider"></div>
+    <div>
+      <div class="section-label">History</div>
+      <div class="history" id="history"><span class="placeholder" style="font-size:12px">Completed sentences will appear here.</span></div>
+    </div>
+  </div>
+  <script>
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      document.getElementById('app').innerHTML = '<div class="no-support">Your browser does not support the Web Speech API.<br>Please use Chrome or Edge.</div>';
+    } else {
+      const btnMic = document.getElementById('btnMic');
+      const btnClear = document.getElementById('btnClear');
+      const dot = document.getElementById('dot');
+      const statusText = document.getElementById('statusText');
+      const transcriptBox = document.getElementById('transcriptBox');
+      const translationBox = document.getElementById('translationBox');
+      const historyEl = document.getElementById('history');
+      let recognition, listening = false, finalTranscript = '';
+      let translationQueue = Promise.resolve(), lastTranslated = '', translating = false;
+      let historyItems = [];
+
+      function setStatus(state, text) {
+        dot.className = 'dot' + (state ? ' ' + state : '');
+        statusText.textContent = text;
+      }
+      function renderTranscript(interim) {
+        if (!finalTranscript && !interim) { transcriptBox.innerHTML = '<span class="placeholder">Speech will appear here...</span>'; return; }
+        transcriptBox.innerHTML = (finalTranscript ? escapeHtml(finalTranscript) : '') + (interim ? `<span class="interim">${escapeHtml(interim)}</span>` : '');
+        transcriptBox.scrollTop = transcriptBox.scrollHeight;
+      }
+      function renderTranslation(text, loading) {
+        if (loading) { translationBox.innerHTML = `<span class="spinner"></span><span style="color:var(--text-secondary);font-size:13px">번역 중...</span>`; }
+        else if (!text) { translationBox.innerHTML = '<span class="placeholder">번역이 여기에 나타납니다...</span>'; }
+        else { translationBox.innerHTML = escapeHtml(text); translationBox.scrollTop = translationBox.scrollHeight; }
+      }
+      function addToHistory(eng, kor) {
+        const ph = historyEl.querySelector('.placeholder');
+        if (ph) ph.remove();
+        historyItems.unshift({ eng, kor });
+        if (historyItems.length > 30) historyItems.pop();
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.innerHTML = `<div class="eng">${escapeHtml(eng)}</div><div class="kor">${escapeHtml(kor)}</div>`;
+        historyEl.prepend(item);
+      }
+      async function translate(text) {
+        if (!text.trim() || text === lastTranslated) return;
+        lastTranslated = text; translating = true;
+        setStatus('translating', 'Translating...'); renderTranslation('', true);
+        try {
+          const res = await fetch('/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+          const data = await res.json();
+          if (data.translation) { renderTranslation(data.translation); addToHistory(text, data.translation); }
+          else renderTranslation('');
+        } catch (e) { setStatus('error', 'Translation error — check server'); renderTranslation(''); }
+        finally {
+          translating = false;
+          if (listening) setStatus('active', 'Listening...');
+          else setStatus('', 'Ready — click Start to begin');
+        }
+      }
+      function queueTranslation(text) { translationQueue = translationQueue.then(() => translate(text)); }
+      function startRecognition() {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'en-US'; recognition.continuous = true;
+        recognition.interimResults = true; recognition.maxAlternatives = 1;
+        recognition.onstart = () => setStatus('active', 'Listening...');
+        recognition.onresult = (e) => {
+          let interim = '', newFinal = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) newFinal += t; else interim += t;
+          }
+          if (newFinal) { finalTranscript += (finalTranscript ? ' ' : '') + newFinal.trim(); queueTranslation(finalTranscript); }
+          renderTranscript(interim);
+        };
+        recognition.onerror = (e) => { if (e.error === 'no-speech' || e.error === 'aborted') return; setStatus('error', `Error: ${e.error}`); };
+        recognition.onend = () => { if (listening) setTimeout(() => { if (listening) recognition.start(); }, 200); };
+        recognition.start();
+      }
+      btnMic.addEventListener('click', () => {
+        if (!listening) {
+          listening = true;
+          btnMic.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop`;
+          btnMic.classList.add('listening'); startRecognition();
+        } else {
+          listening = false;
+          btnMic.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg> Start`;
+          btnMic.classList.remove('listening'); recognition.stop();
+          if (!translating) setStatus('', 'Ready — click Start to begin');
+        }
+      });
+      btnClear.addEventListener('click', () => {
+        finalTranscript = ''; lastTranslated = ''; historyItems = [];
+        renderTranscript(''); renderTranslation('');
+        historyEl.innerHTML = '<span class="placeholder" style="font-size:12px">Completed sentences will appear here.</span>';
+      });
+      function escapeHtml(str) { return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    }
+  </script>
+</body>
+</html>
