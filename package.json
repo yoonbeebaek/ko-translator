@@ -1,5 +1,5 @@
 {
-  "name": "koro-live-translator",
+  "name": "livetl",
   "version": "1.0.0",
   "description": "Live English to Korean meeting translator",
   "main": "server.js",
